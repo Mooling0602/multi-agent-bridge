@@ -344,6 +344,7 @@ async function cmdDispatch(args) {
     console.log("Usage: agent-bridge dispatch <sessionId> [--sender <senderSessionId>] <message>");
     console.log("Send a message to a session without waiting for a response.");
     console.log("  --sender  Include notification instructions for the target session.");
+    console.log("  (If not provided, auto-detects sender from current directory.)");
     process.exit(1);
   }
 
@@ -355,6 +356,17 @@ async function cmdDispatch(args) {
     server
   );
   await coordinator.start();
+
+  // Auto-detect sender session from current working directory
+  if (!senderSession) {
+    try {
+      const sessions = await coordinator.listServerSessions(process.cwd());
+      if (sessions.length > 0) {
+        senderSession = sessions[0].id;
+      }
+    } catch { /* ignore detection failures */ }
+  }
+
   const opts = senderSession ? { senderSessionId: senderSession } : {};
   const result = await coordinator.dispatchToAgent("dispatcher", message, opts);
   await coordinator.stop();
