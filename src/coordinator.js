@@ -9,7 +9,7 @@ const MAX_CONCURRENT = 2;
 export class SessionCoordinator {
   /**
    * @param {import("./types.js").AgentConfig[]} agents
-   * @param {{ serverUrl?: string, password?: string }} [serverConfig]
+   * @param {{ serverUrl?: string, password?: string, defaultModel?: string }} [serverConfig]
    */
   constructor(agents, serverConfig) {
     this.configs = agents;
@@ -20,6 +20,7 @@ export class SessionCoordinator {
     this._serverUrl = serverConfig?.serverUrl ?? null;
     this._concurrency = 0;
     this._pending = [];
+    this._defaultModel = serverConfig?.defaultModel ?? null;
 
     /** @type {Map<string, import("./types.js").AgentState>} */
     this.agents = new Map();
@@ -107,8 +108,14 @@ export class SessionCoordinator {
     let sessionId = config.sessionId;
 
     if (!sessionId) {
+      const modelOpt = config.model || this._defaultModel;
+      const createBody = { title: config.name };
+      if (modelOpt) {
+        const [providerID, modelID] = modelOpt.split("/");
+        createBody.model = { providerID, modelID };
+      }
       const session = await this.client.session.create({
-        body: { title: config.name },
+        body: createBody,
       });
       sessionId = session.data.id;
     }
