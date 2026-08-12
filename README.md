@@ -37,7 +37,10 @@ multi-agent-bridge/
 ## 安装
 
 ```bash
+git clone <repo-url>
+cd multi-agent-bridge
 npm install
+npm link   # 注册 agent-bridge 为全局命令
 ```
 
 需要确保本机已安装 `opencode` CLI 并位于 `PATH` 中。
@@ -65,7 +68,7 @@ npm start chat
 
 ### 接入已有会话
 
-通过全局 CLI 命令 `agent-bridge` 操作，首次使用需配置服务器：
+通过 `npm link` 注册的全局 CLI 命令 `agent-bridge` 操作，首次使用需配置服务器：
 
 ```bash
 # 配置本地 opencode 服务器
