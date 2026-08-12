@@ -169,6 +169,7 @@ export class SessionCoordinator {
   }
 
   getAgent(name) { return this.agents.get(name) ?? null; }
+  getSessionId(name) { return this.agents.get(name)?.sessionId ?? null; }
   listAgents() { return [...this.agents.keys()]; }
 
   /**
@@ -271,12 +272,16 @@ export class SessionCoordinator {
   }
 
   async dispatchMessages(fromAgent, messages) {
+    const fromState = this.agents.get(fromAgent);
+    const fromSessionId = fromState?.sessionId;
+
     /** @type {Map<string, string>} */
     const responses = new Map();
     for (const msg of messages) {
       if (msg.action === "broadcast") {
-        for (const name of this.agents.keys()) {
+        for (const [name, st] of this.agents) {
           if (name === fromAgent) continue;
+          if (fromSessionId && st.sessionId === fromSessionId) continue;
           const resp = await this.sendToAgent(name, `[Message from ${fromAgent}]\n${msg.content}`);
           responses.set(name, resp);
           await this._notifyListeners(name, { ...msg, from: fromAgent });
@@ -286,6 +291,7 @@ export class SessionCoordinator {
         const state = this.agents.get(msg.to);
         if (!state) continue;
         if (fromAgent && state.config.peers && !state.config.peers.includes(fromAgent)) continue;
+        if (fromSessionId && state.sessionId === fromSessionId) continue;
         const resp = await this.sendToAgent(msg.to, `[Message from ${fromAgent}]\n${msg.content}`);
         responses.set(msg.to, resp);
         await this._notifyListeners(msg.to, { ...msg, from: fromAgent });
