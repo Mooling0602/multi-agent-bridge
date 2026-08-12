@@ -142,4 +142,4 @@ npm run todo rm <id>
 
 ## 许可证
 
-私有项目。
+MIT License - 详见 [LICENSE](./LICENSE)
