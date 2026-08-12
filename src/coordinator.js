@@ -33,9 +33,6 @@ export class SessionCoordinator {
 
     /** @type {import("@opencode-ai/sdk/v2").OpencodeClient|null} */
     this._v2Client = null;
-
-    /** @type {Map<string, import("./types.js").DispatchRecord>} */
-    this._dispatches = new Map();
   }
 
   _getV2Client() {
@@ -283,55 +280,45 @@ export class SessionCoordinator {
   /**
    * Dispatch a message to an agent asynchronously and return immediately.
    * The target session processes the message in the background.
+   *
+   * Uses the V1 prompt_async endpoint so the message lands in the same
+   * (V1) world as Web UI sessions and is handled by the V1 loop. The V2
+   * queue prompt admitted inputs but the V2 runner failed in practice
+   * (ModelUnavailableError), leaving messages unprocessed.
+   *
    * @param {string} agentName
    * @param {string} message
    * @param {{ model?: object, fromAgent?: string, senderSessionId?: string }} [opts]
-   * @returns {Promise<{ admittedSeq: number, sessionInputId: string, sessionID: string }>}
+   * @returns {Promise<{ accepted: boolean, sessionID: string }>}
    */
   async dispatchToAgent(agentName, message, opts = {}) {
     const state = this.agents.get(agentName);
     if (!state) throw new Error(`Agent "${agentName}" not found`);
 
-    const v2 = this._getV2Client();
     let text = opts.fromAgent ? `[Message from ${opts.fromAgent}]\n${message}` : message;
     if (opts.senderSessionId) {
       text += `\n\n---\n任务完成后运行以下命令通知发送方:\nagent-bridge notify ${opts.senderSessionId} "完成摘要: ..."`;
     }
+    const body = {
+      parts: [{ type: "text", text }],
+      ...(opts.model ? { model: opts.model } : {}),
+    };
 
-    // The SDK flattens top-level fields into the request body; nesting them
-    // under `body` silently drops them (empty request → 400). Pass prompt and
-    // delivery at the top level. The response is `{ data: Admitted }` and the
-    // SDK exposes it as resp.data.data.
-    const resp = await v2.v2.session.prompt({
-      sessionID: state.sessionId,
-      prompt: { text },
-      delivery: "queue",
+    const resp = await this.client.session.promptAsync({
+      path: { id: state.sessionId },
+      body,
     });
     if (resp.error) {
       const detail = resp.error.message ?? JSON.stringify(resp.error)
       throw new Error(`dispatch rejected: ${detail}`)
     }
-    const admitted = resp.data?.data ?? resp.data;
-    if (!admitted) throw new Error("dispatch failed: empty response");
-    const record = {
-      sessionInputId: admitted.id,
-      admittedSeq: admitted.admittedSeq,
-      targetAgent: agentName,
-      targetSession: state.sessionId,
-      timeCreated: admitted.timeCreated,
-    };
-    this._dispatches.set(admitted.id, record);
 
     state.history.push({
       agent: agentName, role: "user", content: message,
       timestamp: new Date().toISOString(),
     });
 
-    return {
-      admittedSeq: admitted.admittedSeq,
-      sessionInputId: admitted.id,
-      sessionID: admitted.sessionID,
-    };
+    return { accepted: true, sessionID: state.sessionId };
   }
 
   // ── Session Status ─────────────────────────────────────────────

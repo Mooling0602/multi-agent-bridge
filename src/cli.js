@@ -357,11 +357,14 @@ async function cmdDispatch(args) {
   );
   await coordinator.start();
 
-  // Auto-detect sender session from current working directory
+  // Auto-detect sender session from current working directory. Only attach
+  // the notification instruction when exactly one candidate exists; with
+  // multiple sessions the guess is unreliable and would send the
+  // notification to the wrong session.
   if (!senderSession) {
     try {
       const sessions = await coordinator.listServerSessions(process.cwd());
-      if (sessions.length > 0) {
+      if (sessions.length === 1) {
         senderSession = sessions[0].id;
       }
     } catch { /* ignore detection failures */ }
@@ -391,7 +394,9 @@ async function cmdNotify(args) {
     server
   );
   await coordinator.start();
-  await coordinator.injectContext("notifier",
+  // Use dispatchToAgent (V1 promptAsync) so the receiving session wakes up
+  // and processes the notification instead of it sitting unread.
+  await coordinator.dispatchToAgent("notifier",
     `[System Notification] ${message}`
   );
   await coordinator.stop();

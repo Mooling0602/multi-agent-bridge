@@ -103,7 +103,15 @@ Example:
 agent-bridge dispatch ses_abc123 "Run git log --oneline -5"
 ```
 
-Returns `{"admittedSeq":...,"sessionInputId":...,"sessionID":...}` immediately. Use `agent-bridge check <sessionId>` later to see results.
+Returns `{"accepted":true,"sessionID":"..."}` immediately; the target session
+runs the V1 loop in the background. Use `agent-bridge check <sessionId>`
+later to see results.
+
+With `--sender <senderSessionId>`, the target session is instructed to run
+`agent-bridge notify <senderSessionId> ...` after finishing, so the sender
+session is notified (and woken) on completion. Without `--sender`, the CLI
+only auto-detects the sender when exactly one session exists in the current
+directory.
 
 ### List servers
 

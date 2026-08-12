@@ -151,6 +151,25 @@ npm run todo rm <id>
 5. 解析代理回复中的 `@agent:` / `@broadcast` 指令，执行消息路由
 6. 支持多轮回合（`turn`）和并行群聊（`groupChat`）
 
+### API 使用边界（V1 / V2）
+
+桥接层只通过 HTTP API 访问 opencode 服务器，并严格区分两套接口：
+
+**消息执行路径 —— 统一使用 V1**
+`session.create` / `session.get` / `session.list` / `session.messages` /
+`session.prompt` / `session.promptAsync`（对应 `sendToAgent`、
+`injectContext`、`dispatchToAgent`、`notify` 等）全部走 V1 端点。
+原因：Web UI 中的会话属于 V1 世界（V1 loop 执行、V1 `message` 表存储），
+V2 的队列派发（`/api/session/:id/prompt`）在当前服务器环境中由 V2 runner
+处理，会因模型解析失败（`ModelUnavailableError`）导致消息永远不被处理。
+
+**仅 question 查询使用 V2**
+`checkSession` 的 pending questions 检测与 `replyToQuestion` /
+`rejectQuestion` 使用 V2 question 端点——该功能为 V2 独有、只读、不驱动
+LLM 执行，失败时自动降级为"无待处理问题"，不会影响会话。
+
+禁止在消息执行路径上引入 V2 调用，避免双引擎驱动同一会话。
+
 ## 许可证
 
 MIT License - 详见 [LICENSE](./LICENSE)
