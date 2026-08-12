@@ -7,7 +7,9 @@
   "scripts": {
     "start": "node src/index.js",
     "code-review": "node src/scenarios/code-review.js",
-    "todo": "node src/todo/index.js"
+    "todo": "node src/todo/index.js",
+    "test": "node --test src/todo/__tests__/*.test.js",
+    "test:integration": "node --test src/__tests__/*.test.js"
   },
   "dependencies": {
     "@opencode-ai/sdk": "^1.18.16"
