@@ -12,6 +12,7 @@ Session management:
   connect --server <name> <sessionId>   Use a named server
   sessions [--keyword <kw>]   List/filter sessions (uses default server)
   sessions --server <name>    List sessions on a specific server
+  query --directory <path> [--keyword <kw>]  List sessions in a specific directory
   servers                  List configured servers
   server add <name> <url>   Add a server (will prompt for password)
   server default <name>     Set the default server
@@ -152,6 +153,54 @@ async function cmdSessions(args) {
   }
 }
 
+async function cmdQuery(args) {
+  let serverName = null;
+  let directory = null;
+  let keyword = null;
+
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--server" || args[i] === "-s") {
+      serverName = args[++i];
+    } else if (args[i] === "--directory" || args[i] === "-d") {
+      directory = args[++i];
+    } else if (args[i] === "--keyword") {
+      keyword = args[++i];
+    }
+  }
+
+  if (!directory) {
+    console.log("Usage: agent-bridge query --directory <path> [--keyword <kw>]");
+    process.exit(1);
+  }
+
+  const server = resolveServer(serverName);
+  if (!server) noServerExit();
+
+  const coordinator = new SessionCoordinator([], server);
+  await coordinator.start();
+  try {
+    const sessions = await coordinator.listServerSessions(directory);
+    let filtered = sessions;
+    if (keyword) {
+      const lower = keyword.toLowerCase();
+      filtered = sessions.filter((s) =>
+        s.title.toLowerCase().includes(lower) ||
+        (s.directory && s.directory.toLowerCase().includes(lower))
+      );
+    }
+    if (filtered.length === 0) {
+      console.log("No sessions found.");
+      return;
+    }
+    console.log(`Server: ${server.url}  Directory: ${directory}\n`);
+    for (const s of filtered) {
+      console.log(`${s.id}  "${s.title}"  ${s.directory || ""}`);
+    }
+  } finally {
+    await coordinator.stop();
+  }
+}
+
 function cmdServers() {
   const config = loadConfig();
   if (Object.keys(config.servers).length === 0) {
@@ -221,6 +270,9 @@ async function main() {
         break;
       case "sessions":
         await cmdSessions(args);
+        break;
+      case "query":
+        await cmdQuery(args);
         break;
       case "servers":
         cmdServers();
