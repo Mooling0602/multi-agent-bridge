@@ -45,3 +45,25 @@ export function resolveServer(name) {
 
   return null;
 }
+
+export function getDefaultModel() {
+  return loadConfig().defaultModel || "";
+}
+
+export function setDefaultModel(model) {
+  const config = loadConfig();
+  config.defaultModel = model;
+  saveConfig(config);
+}
+
+/**
+ * Resolve server with default model injected from config.
+ */
+export function resolveServerWithModel(name) {
+  const server = resolveServer(name);
+  if (server) {
+    const model = getDefaultModel();
+    if (model) server.defaultModel = model;
+  }
+  return server;
+}

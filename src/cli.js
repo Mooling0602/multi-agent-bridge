@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { SessionCoordinator } from "./coordinator.js";
-import { resolveServer, loadConfig, saveConfig, getConfigPath } from "./config.js";
+import { resolveServer, loadConfig, saveConfig, getConfigPath, resolveServerWithModel, getDefaultModel, setDefaultModel } from "./config.js";
 
 const HELP = `
 agent-bridge  —  Multi-Agent Bridge CLI
@@ -20,6 +20,8 @@ Session management:
   servers                  List configured servers
   server add <name> <url>   Add a server (will prompt for password)
   server default <name>     Set the default server
+  model                     Show current default model for new sessions
+  model set <model>         Set default model (e.g. opencode-go/deepseek-v4-pro)
 
 Agent scenarios (run from project dir):
   npm start help           Show all scenarios (demo, group, delegate, chat, etc.)
@@ -69,7 +71,7 @@ async function cmdCheck(args) {
     process.exit(1);
   }
 
-  const server = resolveServer();
+  const server = resolveServerWithModel();
   if (!server) noServerExit();
 
   const coordinator = new SessionCoordinator(
@@ -141,7 +143,7 @@ async function cmdConnect(args) {
     i++;
   }
 
-  const server = resolveServer(serverName);
+  const server = resolveServerWithModel(serverName);
   if (!server) noServerExit();
 
   if (!sessionId) {
@@ -172,7 +174,7 @@ async function cmdConnect(args) {
     }
   }
 
-  const targetServer = resolveServer(serverName);
+  const targetServer = resolveServerWithModel(serverName);
   if (!targetServer) noServerExit();
 
   console.log(`Server: ${targetServer.url}`);
@@ -233,7 +235,7 @@ async function cmdSessions(args) {
     }
   }
 
-  const server = resolveServer(serverName);
+  const server = resolveServerWithModel(serverName);
   if (!server) noServerExit();
 
   const coordinator = new SessionCoordinator([], server);
@@ -288,7 +290,7 @@ async function cmdQuery(args) {
     process.exit(1);
   }
 
-  const server = resolveServer(serverName);
+  const server = resolveServerWithModel(serverName);
   if (!server) noServerExit();
 
   const coordinator = new SessionCoordinator([], server);
@@ -316,6 +318,27 @@ async function cmdQuery(args) {
     }
   } finally {
     await coordinator.stop();
+  }
+}
+
+function cmdModel(args) {
+  if (args[0] === "set") {
+    const model = args[1];
+    if (!model) {
+      console.log("Usage: agent-bridge model set <provider/model>");
+      console.log("Example: agent-bridge model set opencode-go/deepseek-v4-pro");
+      process.exit(1);
+    }
+    setDefaultModel(model);
+    console.log(`Default model set to "${model}"`);
+    return;
+  }
+  const current = getDefaultModel();
+  if (current) {
+    console.log(`Default model: ${current}`);
+  } else {
+    console.log("No default model configured.");
+    console.log("Set one with: agent-bridge model set <provider/model>");
   }
 }
 
@@ -406,6 +429,9 @@ async function main() {
           else if (sub === "default") cmdServerDefault(subArgs);
           else console.log(`Unknown server subcommand: ${sub}\nUsage: agent-bridge server <add|default>`);
         }
+        break;
+      case "model":
+        cmdModel(args);
         break;
       default:
         console.log(`Unknown command: ${command}\n`);
