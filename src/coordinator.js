@@ -228,14 +228,6 @@ export class SessionCoordinator {
         { agent: agentName, role: "user", content: message, timestamp: new Date().toISOString() },
         { agent: agentName, role: "agent", content: text, timestamp: new Date().toISOString() }
       );
-
-      const { selfActions } = this.parseRoutes(text);
-      for (const act of selfActions) {
-        if (act.action === "rename") {
-          await this.renameSession(agentName, act.value);
-        }
-      }
-
       return text;
     } finally {
       this._release();
@@ -255,23 +247,11 @@ export class SessionCoordinator {
     });
   }
 
-  async renameSession(agentName, newTitle) {
-    const state = this.agents.get(agentName);
-    if (!state) throw new Error(`Agent "${agentName}" not found`);
-    await this.client.session.update({
-      path: { id: state.sessionId },
-      body: { title: newTitle },
-    });
-    state.config.title = newTitle;
-  }
-
   // ── Inter-Agent Routing ────────────────────────────────────────
 
   parseRoutes(text) {
     /** @type {import("./types.js").AgentMessage[]} */
     const messages = [];
-    /** @type {{action: string, value: string}[]} */
-    const selfActions = [];
     let remaining = text;
 
     for (const match of text.matchAll(ROUTING_PATTERNS.directMessage)) {
@@ -286,12 +266,8 @@ export class SessionCoordinator {
       messages.push({ action: "broadcast", from: "", to: "", content: match[1].trim() });
       remaining = remaining.replace(match[0], "");
     }
-    for (const match of text.matchAll(ROUTING_PATTERNS.rename)) {
-      selfActions.push({ action: "rename", value: match[1].trim() });
-      remaining = remaining.replace(match[0], "");
-    }
 
-    return { messages, selfActions, remainingText: remaining.trim() };
+    return { messages, remainingText: remaining.trim() };
   }
 
   async dispatchMessages(fromAgent, messages) {
@@ -339,15 +315,8 @@ export class SessionCoordinator {
       }
       turnLog.push({ agent: currentAgent, message: currentMessage, response });
 
-      const { messages, selfActions, remainingText } = this.parseRoutes(response);
-
-      for (const act of selfActions) {
-        if (act.action === "rename") {
-          await this.renameSession(currentAgent, act.value);
-        }
-      }
-
-      if (messages.length === 0 && selfActions.length === 0) {
+      const { messages, remainingText } = this.parseRoutes(response);
+      if (messages.length === 0) {
         return { log: turnLog, finalResponse: response };
       }
 

@@ -111,7 +111,6 @@ agent-bridge connect ses_abc123
 | `@agent:<name> <message>` | 向指定代理发送直接消息 |
 | `@broadcast <message>` | 向所有其他代理广播消息 |
 | `@all <message>` | 同广播 |
-| `@title <new-title>` | 重命名当前会话 |
 
 ### 代码审查场景
 

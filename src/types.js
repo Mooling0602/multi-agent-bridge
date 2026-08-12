@@ -44,13 +44,11 @@
 // ─── Constants ───────────────────────────────────────────────────
 export const ROUTING_PATTERNS = {
   // @agent:name message content
-  directMessage: /@agent:(\w[\w-]*)\s+(.+?)(?=@agent:|@title|$)/gs,
+  directMessage: /@agent:(\w[\w-]*)\s+(.+?)(?=@agent:|$)/gs,
   // @broadcast message content
-  broadcast: /@broadcast\s+(.+?)(?=@broadcast|@agent:|@title|$)/gs,
+  broadcast: /@broadcast\s+(.+?)(?=@broadcast|@agent:|$)/gs,
   // @all message content
-  broadcastAll: /@all\s+(.+?)(?=@all|@agent:|@broadcast|@title|$)/gs,
-  // @title new name
-  rename: /@title\s+(.+?)(?=@title|@agent:|@broadcast|@all|$)/gs,
+  broadcastAll: /@all\s+(.+?)(?=@all|@agent:|@broadcast|$)/gs,
 };
 
 export const STRUCTURED_ACTION_SCHEMA = {
