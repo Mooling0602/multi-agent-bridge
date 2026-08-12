@@ -101,8 +101,48 @@ export class SessionCoordinator {
       id: s.id,
       title: s.title,
       slug: s.slug,
-      timeCreated: s.timeCreated,
+      directory: s.directory,
+      timeCreated: s.time?.created,
+      timeUpdated: s.time?.updated,
     }));
+  }
+
+  /**
+   * Find sessions by directory and/or title keyword.
+   * Set deep=true to also search inside session messages (slower).
+   */
+  async findSessions({ directory, keyword, deep = false } = {}) {
+    let sessions = await this.listServerSessions();
+
+    if (directory) {
+      const dir = directory.replace(/\/+$/, "");
+      sessions = sessions.filter((s) => s.directory === dir);
+    }
+
+    if (keyword) {
+      const lower = keyword.toLowerCase();
+      sessions = sessions.filter((s) => s.title.toLowerCase().includes(lower) || s.slug?.toLowerCase().includes(lower));
+    }
+
+    if (deep && keyword) {
+      const deepResults = await Promise.all(
+        sessions.map(async (s) => {
+          try {
+            const msgs = await this.getSessionMessages(s.id);
+            const match = msgs.some((m) => {
+              const text = m.parts?.filter((p) => p.type === "text").map((p) => p.text).join(" ") ?? "";
+              return text.toLowerCase().includes(keyword.toLowerCase());
+            });
+            return match ? s : null;
+          } catch {
+            return null;
+          }
+        })
+      );
+      sessions = deepResults.filter(Boolean);
+    }
+
+    return sessions;
   }
 
   /**

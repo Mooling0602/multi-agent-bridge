@@ -47,10 +47,38 @@ describe("SessionCoordinator", () => {
       assert.equal(state.config.name, "tester");
     });
 
-    it("listServerSessions returns sessions", { timeout: 10_000 }, async () => {
+    it("listServerSessions returns sessions with directory", { timeout: 10_000 }, async () => {
       const sessions = await coordinator.listServerSessions();
       assert.ok(Array.isArray(sessions));
       assert.ok(sessions.length >= 2);
+      for (const s of sessions) {
+        assert.ok(s.id, "should have id");
+        assert.ok(s.title, "should have title");
+        assert.ok("directory" in s, "should have directory");
+        assert.ok(s.timeCreated, "should have timeCreated");
+      }
+    });
+  });
+
+  describe("findSessions", () => {
+    it("finds sessions by directory path", { timeout: 10_000 }, async () => {
+      const all = await coordinator.listServerSessions();
+      const dir = all[0]?.directory;
+      if (!dir) return; // skip if sessions lack directory
+
+      const found = await coordinator.findSessions({ directory: dir });
+      assert.ok(found.length > 0, "should find sessions for the directory");
+    });
+
+    it("finds sessions by title keyword", { timeout: 10_000 }, async () => {
+      const found = await coordinator.findSessions({ keyword: "tester" });
+      assert.ok(found.length > 0, "should find the tester session");
+      assert.ok(found.some((s) => s.title === "tester"));
+    });
+
+    it("returns empty for non-matching keyword", { timeout: 10_000 }, async () => {
+      const found = await coordinator.findSessions({ keyword: "zzz_nonexistent_zzz" });
+      assert.equal(found.length, 0);
     });
   });
 
