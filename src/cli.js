@@ -14,6 +14,7 @@ Session management:
     --approve <requestId>        Approve a pending question
     --reject <requestId>         Reject a pending question
     --reply <requestId> <text>   Reply to a question with text
+  dispatch <sessionId> <msg>  Send message without waiting for response
   sessions [--keyword <kw>] [--content]   List/filter sessions in current dir
   sessions --server <name>               List sessions on a specific server
   query --directory <path> [--keyword <kw>] [--content]  List sessions in any dir
@@ -321,6 +322,29 @@ async function cmdQuery(args) {
   }
 }
 
+async function cmdDispatch(args) {
+  const sessionId = args[0];
+  const message = args.slice(1).join(" ");
+  if (!sessionId || !message) {
+    console.log("Usage: agent-bridge dispatch <sessionId> <message>");
+    console.log("Send a message to a session without waiting for a response.");
+    process.exit(1);
+  }
+
+  const server = resolveServerWithModel();
+  if (!server) noServerExit();
+
+  const coordinator = new SessionCoordinator(
+    [{ name: "dispatcher", systemPrompt: "", sessionId }],
+    server
+  );
+  await coordinator.start();
+  const result = await coordinator.dispatchToAgent("dispatcher", message);
+  await coordinator.stop();
+
+  console.log(JSON.stringify(result));
+}
+
 function cmdModel(args) {
   if (args[0] === "set") {
     const model = args[1];
@@ -411,6 +435,9 @@ async function main() {
         break;
       case "check":
         await cmdCheck(args);
+        break;
+      case "dispatch":
+        await cmdDispatch(args);
         break;
       case "sessions":
         await cmdSessions(args);
