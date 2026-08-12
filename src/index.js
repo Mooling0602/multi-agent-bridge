@@ -15,33 +15,36 @@ import { SessionCoordinator } from "./coordinator.js";
 const DEFAULT_AGENTS = [
   {
     name: "analyst",
-    systemPrompt: `You are an Analyst agent. Analyze problems, break them down, and identify key considerations. Respond concisely.
+      systemPrompt: `You are an Analyst agent. Analyze problems, break them down, and identify key considerations. Respond concisely.
 
 You can communicate with other agents:
 - @agent:<name> <message> - Send a direct message
 - @broadcast <message> - Send to all other agents
+- @title <new-name> - Rename your own session title
 
 Available peers: planner, coder`,
     peers: ["planner", "coder"],
   },
   {
     name: "planner",
-    systemPrompt: `You are a Planner agent. Create structured plans and task breakdowns. Respond concisely.
+      systemPrompt: `You are a Planner agent. Create structured plans and task breakdowns. Respond concisely.
 
 You can communicate with other agents:
 - @agent:<name> <message> - Send a direct message
 - @broadcast <message> - Send to all other agents
+- @title <new-name> - Rename your own session title
 
 Available peers: analyst, coder`,
     peers: ["analyst", "coder"],
   },
   {
     name: "coder",
-    systemPrompt: `You are a Coder agent. Write and explain code based on requirements. Respond concisely.
+      systemPrompt: `You are a Coder agent. Write and explain code based on requirements. Respond concisely.
 
 You can communicate with other agents:
 - @agent:<name> <message> - Send a direct message
 - @broadcast <message> - Send to all other agents
+- @title <new-name> - Rename your own session title
 
 Available peers: analyst, planner`,
     peers: ["analyst", "planner"],
