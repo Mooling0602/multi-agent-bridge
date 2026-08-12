@@ -15,6 +15,8 @@ Session management:
     --reject <requestId>         Reject a pending question
     --reply <requestId> <text>   Reply to a question with text
   dispatch <sessionId> <msg>  Send message without waiting for response
+    --sender <id>              Include notification instructions for callback
+  notify <sessionId> <msg>     Inject notification into a session's context
   sessions [--keyword <kw>] [--content]   List/filter sessions in current dir
   sessions --server <name>               List sessions on a specific server
   query --directory <path> [--keyword <kw>] [--content]  List sessions in any dir
@@ -323,11 +325,25 @@ async function cmdQuery(args) {
 }
 
 async function cmdDispatch(args) {
-  const sessionId = args[0];
-  const message = args.slice(1).join(" ");
+  let sessionId = null;
+  let senderSession = null;
+  let msgParts = [];
+
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--sender") {
+      senderSession = args[++i];
+    } else if (!sessionId) {
+      sessionId = args[i];
+    } else {
+      msgParts.push(args[i]);
+    }
+  }
+  const message = msgParts.join(" ");
+
   if (!sessionId || !message) {
-    console.log("Usage: agent-bridge dispatch <sessionId> <message>");
+    console.log("Usage: agent-bridge dispatch <sessionId> [--sender <senderSessionId>] <message>");
     console.log("Send a message to a session without waiting for a response.");
+    console.log("  --sender  Include notification instructions for the target session.");
     process.exit(1);
   }
 
@@ -339,10 +355,36 @@ async function cmdDispatch(args) {
     server
   );
   await coordinator.start();
-  const result = await coordinator.dispatchToAgent("dispatcher", message);
+  const opts = senderSession ? { senderSessionId: senderSession } : {};
+  const result = await coordinator.dispatchToAgent("dispatcher", message, opts);
   await coordinator.stop();
 
   console.log(JSON.stringify(result));
+}
+
+async function cmdNotify(args) {
+  const sessionId = args[0];
+  const message = args.slice(1).join(" ");
+  if (!sessionId || !message) {
+    console.log("Usage: agent-bridge notify <sessionId> <message>");
+    console.log("Inject a notification message into a session's context.");
+    process.exit(1);
+  }
+
+  const server = resolveServerWithModel();
+  if (!server) noServerExit();
+
+  const coordinator = new SessionCoordinator(
+    [{ name: "notifier", systemPrompt: "", sessionId }],
+    server
+  );
+  await coordinator.start();
+  await coordinator.injectContext("notifier",
+    `[System Notification] ${message}`
+  );
+  await coordinator.stop();
+
+  console.log(`Notification sent to ${sessionId}`);
 }
 
 function cmdModel(args) {
@@ -438,6 +480,9 @@ async function main() {
         break;
       case "dispatch":
         await cmdDispatch(args);
+        break;
+      case "notify":
+        await cmdNotify(args);
         break;
       case "sessions":
         await cmdSessions(args);

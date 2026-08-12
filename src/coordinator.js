@@ -281,7 +281,7 @@ export class SessionCoordinator {
    * The target session processes the message in the background.
    * @param {string} agentName
    * @param {string} message
-   * @param {{ model?: object, fromAgent?: string }} [opts]
+   * @param {{ model?: object, fromAgent?: string, senderSessionId?: string }} [opts]
    * @returns {Promise<{ admittedSeq: number, sessionInputId: string, sessionID: string }>}
    */
   async dispatchToAgent(agentName, message, opts = {}) {
@@ -289,9 +289,13 @@ export class SessionCoordinator {
     if (!state) throw new Error(`Agent "${agentName}" not found`);
 
     const v2 = this._getV2Client();
+    let text = opts.fromAgent ? `[Message from ${opts.fromAgent}]\n${message}` : message;
+    if (opts.senderSessionId) {
+      text += `\n\n---\n任务完成后运行以下命令通知发送方:\nagent-bridge notify ${opts.senderSessionId} "完成摘要: ..."`;
+    }
     const body = {
       prompt: {
-        parts: [{ type: "text", text: opts.fromAgent ? `[Message from ${opts.fromAgent}]\n${message}` : message }],
+        parts: [{ type: "text", text }],
       },
       delivery: "queue",
     };
