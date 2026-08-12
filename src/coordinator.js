@@ -9,7 +9,7 @@ const MAX_CONCURRENT = 2;
 export class SessionCoordinator {
   /**
    * @param {import("./types.js").AgentConfig[]} agents
-   * @param {{ serverUrl?: string, password?: string, defaultModel?: string }} [serverConfig]
+   * @param {{ serverUrl?: string, url?: string, password?: string, defaultModel?: string }} [serverConfig]
    */
   constructor(agents, serverConfig) {
     this.configs = agents;
@@ -17,7 +17,11 @@ export class SessionCoordinator {
     this._serverProc = null;
     this._ownedServer = false;
     this._password = serverConfig?.password ?? randomBytes(16).toString("hex");
-    this._serverUrl = serverConfig?.serverUrl ?? null;
+    // config.js servers use the `url` field; accept both spellings so an
+    // external server is never mistaken for an unset one (which would spawn
+    // a second opencode server sharing the user's DB and mark sessions as
+    // owned, causing stop() to delete them).
+    this._serverUrl = serverConfig?.serverUrl ?? serverConfig?.url ?? null;
     this._concurrency = 0;
     this._pending = [];
     this._defaultModel = serverConfig?.defaultModel ?? null;
@@ -293,16 +297,22 @@ export class SessionCoordinator {
     if (opts.senderSessionId) {
       text += `\n\n---\n任务完成后运行以下命令通知发送方:\nagent-bridge notify ${opts.senderSessionId} "完成摘要: ..."`;
     }
-    const body = {
-      prompt: {
-        parts: [{ type: "text", text }],
-      },
-      delivery: "queue",
-    };
-    if (opts.model) body.prompt.model = opts.model;
 
-    const resp = await v2.v2.session.prompt({ sessionID: state.sessionId, body });
-    const admitted = resp.data;
+    // The SDK flattens top-level fields into the request body; nesting them
+    // under `body` silently drops them (empty request → 400). Pass prompt and
+    // delivery at the top level. The response is `{ data: Admitted }` and the
+    // SDK exposes it as resp.data.data.
+    const resp = await v2.v2.session.prompt({
+      sessionID: state.sessionId,
+      prompt: { text },
+      delivery: "queue",
+    });
+    if (resp.error) {
+      const detail = resp.error.message ?? JSON.stringify(resp.error)
+      throw new Error(`dispatch rejected: ${detail}`)
+    }
+    const admitted = resp.data?.data ?? resp.data;
+    if (!admitted) throw new Error("dispatch failed: empty response");
     const record = {
       sessionInputId: admitted.id,
       admittedSeq: admitted.admittedSeq,
