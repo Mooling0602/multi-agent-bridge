@@ -235,7 +235,7 @@ export class SessionCoordinator {
     try {
       const body = {
         parts: [{ type: "text", text: message }],
-        model: opts.model || { providerID: "opencode-go", modelID: "deepseek-v4-flash" },
+        ...(opts.model ? { model: opts.model } : {}),
       };
 
       const result = await this.client.session.prompt({
