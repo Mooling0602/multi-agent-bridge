@@ -297,7 +297,7 @@ export class SessionCoordinator {
 
     let text = opts.fromAgent ? `[Message from ${opts.fromAgent}]\n${message}` : message;
     if (opts.senderSessionId) {
-      text += `\n\n---\n任务完成后运行以下命令通知发送方:\nagent-bridge notify ${opts.senderSessionId} "完成摘要: ..."`;
+      text += `\n\n---\n任务完成后，原样运行以下命令通知发送方（不要修改或添加参数）:\nagent-bridge notify ${opts.senderSessionId}`;
     }
     const body = {
       parts: [{ type: "text", text }],
@@ -322,6 +322,87 @@ export class SessionCoordinator {
   }
 
   // ── Session Status ─────────────────────────────────────────────
+
+  /**
+   * Detect the session currently executing this CLI process (the caller).
+   *
+   * Priority: the server's busy-session status (a caller running this
+   * command inside a bash tool is always busy). When that yields no unique
+   * answer, fall back to a UUID marker probe: inject an unlikely-repeated
+   * message into the most recently updated session in the current
+   * directory and verify the message lands there.
+   *
+   * @returns {Promise<string | undefined>} the caller session ID, if one
+   *   can be identified unambiguously
+   */
+  async detectCallerSession() {
+    const busy = await this.busySessions(process.cwd())
+    if (busy.length === 1) return busy[0]
+    if (busy.length > 1) return undefined
+    return this.probeSessionByMarker(process.cwd())
+  }
+
+  /**
+   * Identify the session that executed a notify command (the receiver),
+   * excluding the given sender session. A receiver is busy while running
+   * the notify command, and it can never be the sender itself, so the
+   * remaining unique busy session is the executor.
+   *
+   * @param {string} excludeSessionId
+   * @returns {Promise<string | undefined>}
+   */
+  async detectExecutorSession(excludeSessionId) {
+    const busy = await this.busySessions(process.cwd())
+    const candidates = busy.filter((id) => id !== excludeSessionId)
+    return candidates.length === 1 ? candidates[0] : undefined
+  }
+
+  /**
+   * List sessions reported busy by the server for a directory.
+   * @param {string} directory
+   * @returns {Promise<string[]>}
+   */
+  async busySessions(directory) {
+    try {
+      const resp = await this.client.session.status({ query: { directory } })
+      const statuses = resp.data ?? {}
+      return Object.entries(statuses)
+        .filter(([, status]) => status && status.type === "busy")
+        .map(([id]) => id)
+    } catch {
+      return []
+    }
+  }
+
+  /**
+   * Fallback caller detection: inject a random UUID marker into the most
+   * recently updated session of a directory and confirm it is the last
+   * message. The injected marker stays in the session history.
+   *
+   * @param {string} directory
+   * @returns {Promise<string | undefined>}
+   */
+  async probeSessionByMarker(directory) {
+    const marker = `__bridge_probe_${randomBytes(8).toString("hex")}__`
+    try {
+      const sessions = await this.listServerSessions(directory)
+      if (sessions.length === 0) return undefined
+      const candidate = sessions[0]
+      await this.client.session.prompt({
+        path: { id: candidate.id },
+        body: { noReply: true, parts: [{ type: "text", text: marker }] },
+      })
+      const msgs = await this.getSessionMessages(candidate.id)
+      const last = msgs.at(-1)
+      const text = (last?.parts ?? [])
+        .filter((p) => p.type === "text")
+        .map((p) => p.text)
+        .join(" ")
+      return text.includes(marker) ? candidate.id : undefined
+    } catch {
+      return undefined
+    }
+  }
 
   /**
    * Check session status: pending questions and recent messages.

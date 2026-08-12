@@ -15,8 +15,10 @@ Session management:
     --reject <requestId>         Reject a pending question
     --reply <requestId> <text>   Reply to a question with text
   dispatch <sessionId> <msg>  Send message without waiting for response
-    --sender <id>              Include notification instructions for callback
-  notify <sessionId> <msg>     Inject notification into a session's context
+    --sender <id>              Caller session ID for completion notify
+                               (default: $SES_SENDER env, then auto-detect)
+  notify <senderSessionId> [msg]  Notify a caller that its dispatch is done
+    msg                        Optional custom message (default: fixed notice)
   sessions [--keyword <kw>] [--content]   List/filter sessions in current dir
   sessions --server <name>               List sessions on a specific server
   query --directory <path> [--keyword <kw>] [--content]  List sessions in any dir
@@ -357,17 +359,14 @@ async function cmdDispatch(args) {
   );
   await coordinator.start();
 
-  // Auto-detect sender session from current working directory. Only attach
-  // the notification instruction when exactly one candidate exists; with
-  // multiple sessions the guess is unreliable and would send the
-  // notification to the wrong session.
+  // Caller detection priority: --sender flag > SES_SENDER env var >
+  // automatic detection (busy-session status, UUID probe fallback).
+  if (!senderSession) senderSession = process.env.SES_SENDER;
   if (!senderSession) {
-    try {
-      const sessions = await coordinator.listServerSessions(process.cwd());
-      if (sessions.length === 1) {
-        senderSession = sessions[0].id;
-      }
-    } catch { /* ignore detection failures */ }
+    senderSession = await coordinator.detectCallerSession();
+    if (senderSession) {
+      console.error(`检测到调用方会话: ${senderSession}`);
+    }
   }
 
   const opts = senderSession ? { senderSessionId: senderSession } : {};
@@ -380,9 +379,11 @@ async function cmdDispatch(args) {
 async function cmdNotify(args) {
   const sessionId = args[0];
   const message = args.slice(1).join(" ");
-  if (!sessionId || !message) {
-    console.log("Usage: agent-bridge notify <sessionId> <message>");
-    console.log("Inject a notification message into a session's context.");
+  if (!sessionId) {
+    console.log("Usage: agent-bridge notify <senderSessionId> [message]");
+    console.log("Notify a sender session that a dispatched task is complete.");
+    console.log("  senderSessionId  The caller session to notify.");
+    console.log("  message          Optional custom message (default: fixed completion notice).");
     process.exit(1);
   }
 
@@ -394,11 +395,21 @@ async function cmdNotify(args) {
     server
   );
   await coordinator.start();
+
+  // Identify the executor (the receiving session that finished the task)
+  // so the fixed notice can name it. The executor is the busy session that
+  // is not the sender. Failing that, fall back to a generic notice without
+  // the receiver ID.
+  const receiver = await coordinator.detectExecutorSession(sessionId);
+  const content = message
+    ? `[System Notification] ${message}`
+    : receiver
+      ? `[System Notification] 你派发的消息已被目标会话（${receiver}）处理完成。`
+      : `[System Notification] 你派发的消息已被目标会话处理完成。`;
+
   // Use dispatchToAgent (V1 promptAsync) so the receiving session wakes up
   // and processes the notification instead of it sitting unread.
-  await coordinator.dispatchToAgent("notifier",
-    `[System Notification] ${message}`
-  );
+  await coordinator.dispatchToAgent("notifier", content);
   await coordinator.stop();
 
   console.log(`Notification sent to ${sessionId}`);
