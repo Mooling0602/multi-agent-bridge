@@ -58,14 +58,42 @@ Multi-Agent Bridge CLI
 
 Usage:  node src/index.js <scenario>
 
-Scenarios:
+  Scenarios:
   chat              Interactive group chat with all agents
   group <topic>     Start a structured group discussion on a topic
   delegate <topic>  Delegate a task through the agent hierarchy
+  connect <url> <password> <sessionId>  Connect to an existing session
   demo              Run a demonstration of agent-to-agent routing
   help              Show this help message
 `);
     process.exit(0);
+  }
+
+  if (scenario === "connect") {
+    const serverUrl = process.argv[3];
+    const password = process.argv[4];
+    const sessionId = process.argv[5];
+
+    if (!serverUrl || !password || !sessionId) {
+      console.log("Usage: node src/index.js connect <serverUrl> <password> <sessionId>");
+      console.log("Example: node src/index.js connect http://localhost:8787 mypassword ses_abc123");
+      process.exit(1);
+    }
+
+    const coordinator = new SessionCoordinator(
+      [{ name: "external", systemPrompt: "", sessionId }],
+      { serverUrl, password }
+    );
+    await coordinator.start();
+    console.log(`Connected to ${serverUrl}, session ${sessionId}`);
+    console.log('Type messages or "exit" to quit.\n');
+
+    try {
+      await extInteractiveChat(coordinator, "external");
+    } finally {
+      await coordinator.stop();
+    }
+    return;
   }
 
   console.log("Starting OpenCode server and creating agent sessions...");
@@ -186,6 +214,25 @@ async function runInteractiveChat(coordinator) {
       const result = await coordinator.turn("analyst", input);
       console.log(`\n[Response]: ${result.finalResponse}\n`);
     }
+  }
+
+  rl.close();
+}
+
+async function extInteractiveChat(coordinator, agentName) {
+  const readline = (await import("readline")).default;
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+  const question = (q) => new Promise((resolve) => rl.question(q, resolve));
+
+  while (true) {
+    const input = await question("> ");
+    if (!input || input === "exit" || input === "quit") break;
+
+    const resp = await coordinator.sendToAgent(agentName, input);
+    console.log(`\n${resp}\n`);
   }
 
   rl.close();

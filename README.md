@@ -55,6 +55,9 @@ npm start delegate "设计一个任务管理系统的 REST API"
 
 # 交互式聊天
 npm start chat
+
+# 接入已有会话
+npm start connect http://localhost:8787 <password> <sessionId>
 ```
 
 ### 代理间通信格式
@@ -88,11 +91,12 @@ npm run todo rm <id>
 
 `SessionCoordinator` 是项目的核心引擎：
 
-1. 启动 `opencode serve` 进程并建立连接
+1. 启动 `opencode serve` 进程并建立连接，或接入已有服务器
 2. 为每个代理配置创建独立的会话（session），保持对话历史隔离
-3. 监控并发请求（最多 2 个并发），通过队列控制吞吐
-4. 解析代理回复中的 `@agent:` / `@broadcast` 指令，执行消息路由
-5. 支持多轮回合（`turn`）和并行群聊（`groupChat`）
+3. 支持 `adoptSession()` 接入已有会话、`findSessions()` 按目录/关键词检索会话
+4. 监控并发请求（最多 2 个并发），通过队列控制吞吐
+5. 解析代理回复中的 `@agent:` / `@broadcast` 指令，执行消息路由
+6. 支持多轮回合（`turn`）和并行群聊（`groupChat`）
 
 ## 许可证
 

@@ -192,4 +192,34 @@ describe("SessionCoordinator", () => {
       assert.equal(last.role, "inter-agent");
     });
   });
+
+  describe("external server connection", () => {
+    it("connects to running server and adopts a session", { timeout: 30_000 }, async () => {
+      const ext = new SessionCoordinator(
+        [],
+        { serverUrl: "http://localhost:4096", password: coordinator._password }
+      );
+      await ext.start();
+
+      try {
+        const sessions = await ext.listServerSessions();
+        assert.ok(sessions.length > 0, "should see sessions on the same server");
+
+        const targetId = sessions[0].id;
+        const adopted = await ext.adoptSession(targetId, "third");
+        assert.equal(adopted.id, targetId);
+        assert.ok(ext.getAgent("third"));
+
+        const resp = await ext.sendToAgent(
+          "third",
+          'Reply with exactly: "CONNECTED" (no quotes). Do not add any other text.'
+        );
+        assert.ok(resp.includes("CONNECTED"));
+      } finally {
+        await ext.stop();
+        assert.equal(ext.listAgents().length, 0,
+          "stop on external server should not delete sessions");
+      }
+    });
+  });
 });

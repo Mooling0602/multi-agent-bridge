@@ -6,12 +6,17 @@ import { ROUTING_PATTERNS } from "./types.js";
 const MAX_CONCURRENT = 2;
 
 export class SessionCoordinator {
-  /** @param {import("./types.js").AgentConfig[]} agents */
-  constructor(agents) {
+  /**
+   * @param {import("./types.js").AgentConfig[]} agents
+   * @param {{ serverUrl?: string, password?: string }} [serverConfig]
+   */
+  constructor(agents, serverConfig) {
     this.configs = agents;
     this.client = null;
     this._serverProc = null;
-    this._password = randomBytes(16).toString("hex");
+    this._ownedServer = false;
+    this._password = serverConfig?.password ?? randomBytes(16).toString("hex");
+    this._serverUrl = serverConfig?.serverUrl ?? null;
     this._concurrency = 0;
     this._pending = [];
 
@@ -24,33 +29,42 @@ export class SessionCoordinator {
   // ── Lifecycle ──────────────────────────────────────────────────
 
   async start() {
-    this._serverProc = spawn("opencode", ["serve", "--port=4096"], {
-      env: { ...process.env, OPENCODE_SERVER_PASSWORD: this._password },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-
-    const url = await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        this._serverProc?.kill();
-        reject(new Error("Server startup timed out after 15s"));
-      }, 15000);
-      let output = "";
-      this._serverProc.stdout.on("data", (chunk) => {
-        output += chunk.toString();
-        const match = output.match(/on\s+(https?:\/\/[^\s]+)/);
-        if (match) { clearTimeout(timeout); resolve(match[1]); }
+    if (this._serverUrl) {
+      this.client = createOpencodeClient({
+        baseUrl: this._serverUrl,
+        headers: { Authorization: "Basic " + btoa("opencode:" + this._password) },
       });
-      this._serverProc.on("exit", (code) => {
-        clearTimeout(timeout);
-        reject(new Error(`Server exited with code ${code}\n${output}`));
+      this._ownedServer = false;
+    } else {
+      this._serverProc = spawn("opencode", ["serve", "--port=4096"], {
+        env: { ...process.env, OPENCODE_SERVER_PASSWORD: this._password },
+        stdio: ["ignore", "pipe", "pipe"],
       });
-      this._serverProc.on("error", (err) => { clearTimeout(timeout); reject(err); });
-    });
 
-    this.client = createOpencodeClient({
-      baseUrl: url,
-      headers: { Authorization: "Basic " + btoa("opencode:" + this._password) },
-    });
+      const url = await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          this._serverProc?.kill();
+          reject(new Error("Server startup timed out after 15s"));
+        }, 15000);
+        let output = "";
+        this._serverProc.stdout.on("data", (chunk) => {
+          output += chunk.toString();
+          const match = output.match(/on\s+(https?:\/\/[^\s]+)/);
+          if (match) { clearTimeout(timeout); resolve(match[1]); }
+        });
+        this._serverProc.on("exit", (code) => {
+          clearTimeout(timeout);
+          reject(new Error(`Server exited with code ${code}\n${output}`));
+        });
+        this._serverProc.on("error", (err) => { clearTimeout(timeout); reject(err); });
+      });
+
+      this.client = createOpencodeClient({
+        baseUrl: url,
+        headers: { Authorization: "Basic " + btoa("opencode:" + this._password) },
+      });
+      this._ownedServer = true;
+    }
 
     for (const config of this.configs) {
       await this._createAgent(config);
@@ -59,10 +73,13 @@ export class SessionCoordinator {
 
   async stop() {
     for (const [, state] of this.agents) {
-      try { await this.client.session.delete({ path: { id: state.sessionId } }); }
-      catch {}
+      if (this._ownedServer) {
+        try { await this.client.session.delete({ path: { id: state.sessionId } }); }
+        catch {}
+      }
     }
-    if (this._serverProc) { this._serverProc.kill(); this._serverProc = null; }
+    this.agents.clear();
+    if (this._ownedServer && this._serverProc) { this._serverProc.kill(); this._serverProc = null; }
   }
 
   // ── Agent Operations ───────────────────────────────────────────
@@ -155,6 +172,25 @@ export class SessionCoordinator {
 
   getAgent(name) { return this.agents.get(name) ?? null; }
   listAgents() { return [...this.agents.keys()]; }
+
+  /**
+   * Adopt an existing session as an agent. Connect to an existing server
+   * first by passing serverUrl/password to the constructor.
+   */
+  async adoptSession(sessionId, agentName) {
+    const session = await this.client.session.get({ path: { id: sessionId } });
+    const data = session.data;
+    if (!data) throw new Error(`Session ${sessionId} not found`);
+
+    const config = { name: agentName, systemPrompt: "", peers: [] };
+    this.agents.set(agentName, {
+      config,
+      sessionId,
+      history: [],
+    });
+
+    return { id: data.id, title: data.title, directory: data.directory };
+  }
 
   // ── Concurrency Gate ───────────────────────────────────────────
 
