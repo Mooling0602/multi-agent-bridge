@@ -1,4 +1,5 @@
 import { createOpencodeClient } from "@opencode-ai/sdk";
+import { createOpencodeClient as createOpencodeV2Client } from "@opencode-ai/sdk/v2";
 import { spawn } from "child_process";
 import { randomBytes } from "crypto";
 import { ROUTING_PATTERNS } from "./types.js";
@@ -24,6 +25,23 @@ export class SessionCoordinator {
     this.agents = new Map();
     /** @type {Map<string, Array<(msg: import("./types.js").AgentMessage) => void>>} */
     this.listeners = new Map();
+
+    /** @type {import("@opencode-ai/sdk/v2").OpencodeClient|null} */
+    this._v2Client = null;
+
+    /** @type {Map<string, import("./types.js").DispatchRecord>} */
+    this._dispatches = new Map();
+  }
+
+  _getV2Client() {
+    if (!this._v2Client) {
+      const headers = { Authorization: "Basic " + btoa("opencode:" + this._password) };
+      this._v2Client = createOpencodeV2Client({
+        baseUrl: this._serverUrl,
+        headers,
+      });
+    }
+    return this._v2Client;
   }
 
   // ── Lifecycle ──────────────────────────────────────────────────
@@ -59,6 +77,7 @@ export class SessionCoordinator {
         this._serverProc.on("error", (err) => { clearTimeout(timeout); reject(err); });
       });
 
+      this._serverUrl = url;
       this.client = createOpencodeClient({
         baseUrl: url,
         headers: { Authorization: "Basic " + btoa("opencode:" + this._password) },
@@ -246,6 +265,160 @@ export class SessionCoordinator {
       agent: agentName, role: "inter-agent", content: context,
       timestamp: new Date().toISOString(),
     });
+  }
+
+  // ── Non-Blocking Dispatch ──────────────────────────────────────
+
+  /**
+   * Dispatch a message to an agent asynchronously and return immediately.
+   * The target session processes the message in the background.
+   * @param {string} agentName
+   * @param {string} message
+   * @param {{ model?: object, fromAgent?: string }} [opts]
+   * @returns {Promise<{ admittedSeq: number, sessionInputId: string, sessionID: string }>}
+   */
+  async dispatchToAgent(agentName, message, opts = {}) {
+    const state = this.agents.get(agentName);
+    if (!state) throw new Error(`Agent "${agentName}" not found`);
+
+    const v2 = this._getV2Client();
+    const body = {
+      prompt: {
+        parts: [{ type: "text", text: opts.fromAgent ? `[Message from ${opts.fromAgent}]\n${message}` : message }],
+      },
+      delivery: "queue",
+    };
+    if (opts.model) body.prompt.model = opts.model;
+
+    const resp = await v2.v2.session.prompt({ sessionID: state.sessionId, body });
+    const admitted = resp.data;
+    const record = {
+      sessionInputId: admitted.id,
+      admittedSeq: admitted.admittedSeq,
+      targetAgent: agentName,
+      targetSession: state.sessionId,
+      timeCreated: admitted.timeCreated,
+    };
+    this._dispatches.set(admitted.id, record);
+
+    state.history.push({
+      agent: agentName, role: "user", content: message,
+      timestamp: new Date().toISOString(),
+    });
+
+    return {
+      admittedSeq: admitted.admittedSeq,
+      sessionInputId: admitted.id,
+      sessionID: admitted.sessionID,
+    };
+  }
+
+  // ── Session Status ─────────────────────────────────────────────
+
+  /**
+   * Check session status: pending questions and recent messages.
+   * @param {string} sessionId
+   * @returns {Promise<{ sessionId: string, pendingQuestions: Array<{ requestID: string, questions: Array<{ question: string, header: string, options: Array<{ label: string, description: string }>, multiple?: boolean }> }>, recentMessages: Array<{ role: string, text: string, timestamp: string }> }>}
+   */
+  async checkSession(sessionId) {
+    const v2 = this._getV2Client();
+
+    /** @type {Array<{ requestID: string, questions: Array<object> }>} */
+    let pendingQuestions = [];
+    try {
+      const qResp = await v2.v2.session.question.list({ sessionID: sessionId });
+      const qList = qResp.data || [];
+      pendingQuestions = qList.map((q) => ({
+        requestID: q.id,
+        questions: (q.questions || []).map((qi) => ({
+          question: qi.question,
+          header: qi.header,
+          options: (qi.options || []).map((o) => ({ label: o.label, description: o.description })),
+          multiple: qi.multiple,
+        })),
+      }));
+    } catch {
+      pendingQuestions = [];
+    }
+
+    /** @type {Array<{ role: string, text: string, timestamp: string }>} */
+    let recentMessages = [];
+    try {
+      const msgs = await this.getSessionMessages(sessionId);
+      const lastFive = msgs.slice(-5);
+      recentMessages = lastFive.map((m) => ({
+        role: m.role || (m.parts?.some((p) => p.type === "tool") ? "agent" : "unknown"),
+        text: (m.parts || []).filter((p) => p.type === "text").map((p) => p.text).join(" "),
+        timestamp: m.time?.created ? new Date(m.time.created).toISOString() : "",
+      }));
+    } catch {
+      recentMessages = [];
+    }
+
+    return { sessionId, pendingQuestions, recentMessages };
+  }
+
+  /**
+   * Answer pending questions for a session.
+   * @param {string} sessionId
+   * @param {string} requestId
+   * @param {Array<Array<string>>} answers - each answer is an array of selected labels
+   */
+  async replyToQuestion(sessionId, requestId, answers) {
+    const v2 = this._getV2Client();
+    return v2.v2.session.question.reply({
+      sessionID: sessionId,
+      requestID: requestId,
+      body: { questionV2Reply: { answers } },
+    });
+  }
+
+  /**
+   * Reject a pending question request.
+   * @param {string} sessionId
+   * @param {string} requestId
+   */
+  async rejectQuestion(sessionId, requestId) {
+    const v2 = this._getV2Client();
+    return v2.v2.session.question.reject({
+      sessionID: sessionId,
+      requestID: requestId,
+    });
+  }
+
+  // ── Completion Notification ────────────────────────────────────
+
+  /**
+   * Notify a sender agent that a dispatched task is complete.
+   * Reads the target session's latest agent response and injects a summary
+   * into the sender's session context.
+   * @param {string} senderAgent - agent name to notify
+   * @param {string} targetAgent - agent name that completed work
+   * @param {{ message?: string }} [opts]
+   * @returns {Promise<string>} the injected notification text
+   */
+  async notifyCompletion(senderAgent, targetAgent, opts = {}) {
+    const targetState = this.agents.get(targetAgent);
+    const senderState = this.agents.get(senderAgent);
+    if (!targetState || !senderState) {
+      throw new Error("Sender or target agent not found");
+    }
+
+    const msgs = await this.getSessionMessages(targetState.sessionId);
+    const agentMsgs = msgs.filter((m) =>
+      m.parts?.some((p) => p.type === "text") && !m.parts?.some((p) => p.type === "tool")
+    );
+    const lastAgent = agentMsgs.at(-1);
+    const lastContent = lastAgent
+      ? lastAgent.parts.filter((p) => p.type === "text").map((p) => p.text).join("\n")
+      : "(no content)";
+
+    const notification = opts.message
+      ? `[System] Agent "${targetAgent}" reports: ${opts.message}`
+      : `[System] Agent "${targetAgent}" has completed its work.\n\nSummary:\n${lastContent.substring(0, 500)}`;
+
+    await this.injectContext(senderAgent, notification);
+    return notification;
   }
 
   // ── Inter-Agent Routing ────────────────────────────────────────

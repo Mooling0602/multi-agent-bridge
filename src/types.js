@@ -41,6 +41,16 @@
  * @property {ConversationTurn[]} history
  */
 
+// ─── Dispatch Record ─────────────────────────────────────────────
+/**
+ * @typedef {Object} DispatchRecord
+ * @property {string} sessionInputId - The id returned by V2 prompt endpoint
+ * @property {number} admittedSeq
+ * @property {string} targetAgent
+ * @property {string} targetSession
+ * @property {number} timeCreated
+ */
+
 // ─── Constants ───────────────────────────────────────────────────
 export const ROUTING_PATTERNS = {
   // @agent:name message content

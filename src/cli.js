@@ -10,6 +10,10 @@ Usage:  agent-bridge <command> [args]
 Session management:
   connect [sessionId]     Interactive connect (uses default server)
   connect --server <name> <sessionId>   Use a named server
+  check <sessionId>       Check session status (pending questions, recent messages)
+    --approve <requestId>        Approve a pending question
+    --reject <requestId>         Reject a pending question
+    --reply <requestId> <text>   Reply to a question with text
   sessions [--keyword <kw>] [--content]   List/filter sessions in current dir
   sessions --server <name>               List sessions on a specific server
   query --directory <path> [--keyword <kw>] [--content]  List sessions in any dir
@@ -38,6 +42,89 @@ function noServerExit() {
   console.error("No server configured.\n");
   console.error(`Add one:  agent-bridge server add <name> <url>`);
   process.exit(1);
+}
+
+async function cmdCheck(args) {
+  let sessionId = null;
+  let approveRequest = null;
+  let rejectRequest = null;
+  let replyRequest = null;
+  let replyText = "";
+
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--approve") {
+      approveRequest = args[++i];
+    } else if (args[i] === "--reject") {
+      rejectRequest = args[++i];
+    } else if (args[i] === "--reply") {
+      replyRequest = args[++i];
+      replyText = args[++i] || "";
+    } else {
+      sessionId = args[i];
+    }
+  }
+
+  if (!sessionId) {
+    console.log("Usage: agent-bridge check <sessionId> [--approve <reqId>] [--reject <reqId>] [--reply <reqId> <text>]");
+    process.exit(1);
+  }
+
+  const server = resolveServer();
+  if (!server) noServerExit();
+
+  const coordinator = new SessionCoordinator(
+    [{ name: "checker", systemPrompt: "", sessionId }],
+    server
+  );
+  await coordinator.start();
+
+  try {
+    if (approveRequest) {
+      await coordinator.replyToQuestion(sessionId, approveRequest, [[]]);
+      console.log(`Approved question request ${approveRequest}`);
+      return;
+    }
+    if (rejectRequest) {
+      await coordinator.rejectQuestion(sessionId, rejectRequest);
+      console.log(`Rejected question request ${rejectRequest}`);
+      return;
+    }
+    if (replyRequest) {
+      await coordinator.replyToQuestion(sessionId, replyRequest, [[replyText]]);
+      console.log(`Replied to question request ${replyRequest}: "${replyText}"`);
+      return;
+    }
+
+    const status = await coordinator.checkSession(sessionId);
+    console.log(`Session: ${sessionId}\n`);
+
+    if (status.pendingQuestions.length > 0) {
+      console.log("Pending Questions:");
+      for (const qr of status.pendingQuestions) {
+        console.log(`  Request: ${qr.requestID}`);
+        for (const qi of qr.questions) {
+          console.log(`  ─${qi.header}`);
+          console.log(`    Q: ${qi.question}`);
+          if (qi.options.length > 0) {
+            console.log(`    Options: ${qi.options.map((o) => o.label).join(", ")}`);
+          }
+        }
+        console.log();
+      }
+    } else {
+      console.log("No pending questions.\n");
+    }
+
+    if (status.recentMessages.length > 0) {
+      console.log("Recent Messages:");
+      for (const msg of status.recentMessages) {
+        const preview = msg.text.substring(0, 120);
+        console.log(`  [${msg.role}] ${preview}${msg.text.length > 120 ? "..." : ""}`);
+      }
+    }
+  } finally {
+    await coordinator.stop();
+  }
 }
 
 async function cmdConnect(args) {
@@ -298,6 +385,9 @@ async function main() {
     switch (command) {
       case "connect":
         await cmdConnect(args);
+        break;
+      case "check":
+        await cmdCheck(args);
         break;
       case "sessions":
         await cmdSessions(args);
