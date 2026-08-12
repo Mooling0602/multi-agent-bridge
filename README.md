@@ -12,12 +12,18 @@
 
 ```
 multi-agent-bridge/
+├── bin/
+│   └── agent-bridge.js           # 全局 CLI 入口
 ├── src/
-│   ├── index.js                  # 主 CLI 入口
+│   ├── index.js                  # 主 CLI 入口（多智能体场景）
+│   ├── cli.js                    # 全局 CLI（会话管理）
+│   ├── config.js                 # 鉴权配置管理
 │   ├── coordinator.js            # 协调引擎（会话管理、消息路由）
 │   ├── types.js                  # JSDoc 类型定义与路由正则
 │   ├── scenarios/
 │   │   └── code-review.js        # 代码审查双代理场景
+│   ├── __tests__/
+│   │   └── coordinator.test.js   # 集成测试
 │   └── todo/
 │       ├── index.js              # TODO CLI 入口
 │       ├── cli.js                # 命令行参数解析
@@ -55,9 +61,45 @@ npm start delegate "设计一个任务管理系统的 REST API"
 
 # 交互式聊天
 npm start chat
+```
 
-# 接入已有会话
-npm start connect http://localhost:8787 <password> <sessionId>
+### 接入已有会话
+
+通过全局 CLI 命令 `agent-bridge` 操作，首次使用需配置服务器：
+
+```bash
+# 配置本地 opencode 服务器
+agent-bridge server add local http://localhost:8787
+# 输入密码
+
+# 查看服务器
+agent-bridge servers
+
+# 列出当前目录的会话
+agent-bridge sessions
+
+# 按关键词搜索
+agent-bridge sessions --keyword "code review"
+
+# 交互式连接会话
+agent-bridge connect
+# 或直接指定
+agent-bridge connect ses_abc123
+
+# 连接成功后即可与已有会话对话
+> 你好，介绍一下当前项目
+```
+
+服务器配置存储在 `~/.config/multi-agent-bridge/config.json`，支持多服务器：
+
+```json
+{
+  "servers": {
+    "local": { "url": "http://localhost:8787", "password": "..." },
+    "remote": { "url": "https://example.com", "password": "..." }
+  },
+  "defaultServer": "local"
+}
 ```
 
 ### 代理间通信格式

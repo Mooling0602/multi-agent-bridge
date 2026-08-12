@@ -109,10 +109,13 @@ export class SessionCoordinator {
   }
 
   /**
-   * List all sessions visible on the shared server
+   * List all sessions visible on the shared server.
+   * If directory is provided, filters sessions for that workspace.
+   * Otherwise returns sessions for the default workspace context.
    */
-  async listServerSessions() {
-    const result = await this.client.session.list();
+  async listServerSessions(directory) {
+    const opts = directory ? { query: { directory } } : {};
+    const result = await this.client.session.list(opts);
     const sessions = result.data || [];
     return sessions.map((s) => ({
       id: s.id,
@@ -129,12 +132,7 @@ export class SessionCoordinator {
    * Set deep=true to also search inside session messages (slower).
    */
   async findSessions({ directory, keyword, deep = false } = {}) {
-    let sessions = await this.listServerSessions();
-
-    if (directory) {
-      const dir = directory.replace(/\/+$/, "");
-      sessions = sessions.filter((s) => s.directory === dir);
-    }
+    let sessions = await this.listServerSessions(directory);
 
     if (keyword) {
       const lower = keyword.toLowerCase();
