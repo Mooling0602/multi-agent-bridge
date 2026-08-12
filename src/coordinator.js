@@ -131,7 +131,7 @@ export class SessionCoordinator {
    * Find sessions by directory and/or title keyword.
    * Set deep=true to also search inside session messages (slower).
    */
-  async findSessions({ directory, keyword, deep = false } = {}) {
+  async findSessions({ directory, keyword, content = false } = {}) {
     let sessions = await this.listServerSessions(directory);
 
     if (keyword) {
@@ -139,7 +139,7 @@ export class SessionCoordinator {
       sessions = sessions.filter((s) => s.title.toLowerCase().includes(lower) || s.slug?.toLowerCase().includes(lower));
     }
 
-    if (deep && keyword) {
+    if (content && keyword) {
       const deepResults = await Promise.all(
         sessions.map(async (s) => {
           try {

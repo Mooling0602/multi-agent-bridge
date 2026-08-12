@@ -10,9 +10,9 @@ Usage:  agent-bridge <command> [args]
 Session management:
   connect [sessionId]     Interactive connect (uses default server)
   connect --server <name> <sessionId>   Use a named server
-  sessions [--keyword <kw>]   List/filter sessions (uses default server)
-  sessions --server <name>    List sessions on a specific server
-  query --directory <path> [--keyword <kw>]  List sessions in a specific directory
+  sessions [--keyword <kw>] [--content]   List/filter sessions in current dir
+  sessions --server <name>               List sessions on a specific server
+  query --directory <path> [--keyword <kw>] [--content]  List sessions in any dir
   servers                  List configured servers
   server add <name> <url>   Add a server (will prompt for password)
   server default <name>     Set the default server
@@ -112,15 +112,37 @@ async function cmdConnect(args) {
   }
 }
 
+async function filterByContent(coordinator, sessions, keyword) {
+  const lower = keyword.toLowerCase();
+  const results = await Promise.all(
+    sessions.map(async (s) => {
+      try {
+        const msgs = await coordinator.getSessionMessages(s.id);
+        const match = msgs.some((m) => {
+          const text = m.parts?.filter((p) => p.type === "text").map((p) => p.text).join(" ") ?? "";
+          return text.toLowerCase().includes(lower);
+        });
+        return match ? s : null;
+      } catch {
+        return null;
+      }
+    })
+  );
+  return results.filter(Boolean);
+}
+
 async function cmdSessions(args) {
   let serverName = null;
   let keyword = null;
+  let content = false;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--server" || args[i] === "-s") {
       serverName = args[++i];
     } else if (args[i] === "--keyword") {
       keyword = args[++i];
+    } else if (args[i] === "--content") {
+      content = true;
     }
   }
 
@@ -138,6 +160,9 @@ async function cmdSessions(args) {
         s.title.toLowerCase().includes(lower) ||
         (s.directory && s.directory.toLowerCase().includes(lower))
       );
+    }
+    if (content && keyword) {
+      filtered = await filterByContent(coordinator, filtered, keyword);
     }
     if (filtered.length === 0) {
       console.log("No sessions found.");
@@ -157,6 +182,7 @@ async function cmdQuery(args) {
   let serverName = null;
   let directory = null;
   let keyword = null;
+  let content = false;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--server" || args[i] === "-s") {
@@ -165,11 +191,13 @@ async function cmdQuery(args) {
       directory = args[++i];
     } else if (args[i] === "--keyword") {
       keyword = args[++i];
+    } else if (args[i] === "--content") {
+      content = true;
     }
   }
 
   if (!directory) {
-    console.log("Usage: agent-bridge query --directory <path> [--keyword <kw>]");
+    console.log("Usage: agent-bridge query --directory <path> [--keyword <kw>] [--content]");
     process.exit(1);
   }
 
@@ -187,6 +215,9 @@ async function cmdQuery(args) {
         s.title.toLowerCase().includes(lower) ||
         (s.directory && s.directory.toLowerCase().includes(lower))
       );
+    }
+    if (content && keyword) {
+      filtered = await filterByContent(coordinator, filtered, keyword);
     }
     if (filtered.length === 0) {
       console.log("No sessions found.");
