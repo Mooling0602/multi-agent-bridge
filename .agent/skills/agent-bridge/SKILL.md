@@ -69,6 +69,27 @@ agent-bridge connect ses_abc123
 
 Once connected, type messages to the session. Type `exit` or `quit` to disconnect.
 
+### Check session status
+
+Check a session's pending questions and recent messages:
+
+```sh
+agent-bridge check <sessionId>
+```
+
+If a session has pending questions (e.g., the question tool is blocking it), you can respond:
+
+```sh
+# Approve a question request
+agent-bridge check <sessionId> --approve <requestId>
+
+# Reject a question request
+agent-bridge check <sessionId> --reject <requestId>
+
+# Reply to a question with custom text
+agent-bridge check <sessionId> --reply <requestId> "your answer here"
+```
+
 ### List servers
 
 ```sh
@@ -120,3 +141,11 @@ Agents can communicate using these directives in their prompts or responses:
 - **DO NOT** connect to or send messages to the current session. This will cause an internal error and may result in session data loss.
 - Use `agent-bridge query --directory <path>` to inspect sessions in other projects without changing directories.
 - The tool is read-only for existing sessions — it does not modify or delete them.
+
+## Connected Session Best Practices
+
+When writing prompts for sessions that will be connected via agent-bridge:
+
+- **Avoid the `question` tool** — it blocks the session waiting for user input. No user is watching a connected session, so questions will cause the session to hang indefinitely.
+- **Report missing information** — if the session lacks context needed to complete its task, abort early and report exactly what information is required. The sending agent can supply the missing details and retry.
+- **Use `agent-bridge check`** to monitor connected sessions for pending questions. If a session is blocked, use `--approve`, `--reject`, or `--reply` to unblock it.
