@@ -45,6 +45,14 @@ npm link   # 注册 agent-bridge 为全局命令
 
 需要确保本机已安装 `opencode` CLI 并位于 `PATH` 中。
 
+### 安装 OpenCode Skill
+
+克隆仓库后，将 skill 链接到 OpenCode 配置目录，即可在 AI 智能体中直接使用：
+
+```bash
+ln -s "$(pwd)/.agent/skills/agent-bridge" ~/.config/opencode/skills/agent-bridge
+```
+
 ## 使用
 
 ### 多智能体场景
