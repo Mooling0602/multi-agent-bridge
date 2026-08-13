@@ -1,5 +1,7 @@
 # Multi-Agent Bridge
 
+**本项目将归档，请查看新仓库 https://github.com/Mooling0602/opencode-agent-bridge**
+
 基于 [@opencode-ai/sdk](https://www.npmjs.com/package/@opencode-ai/sdk) 的多智能体桥接框架，**仅适用于 [OpenCode](https://github.com/anomalyco/opencode) CLI**。通过 `SessionCoordinator` 协调引擎启动多个 AI 代理会话，并实现代理间的消息路由与群组讨论。
 
 ## 技术栈
